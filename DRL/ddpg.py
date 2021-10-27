@@ -21,7 +21,7 @@ coord = coord.to(device)
 criterion = nn.MSELoss()
 
 Decoder = FCN()
-Decoder.load_state_dict(torch.load('./renderer.pkl'))
+Decoder.load_state_dict(torch.load('../renderer.pkl'))
 
 def decode(x, canvas): # b * (10 + 3)
     x = x.view(-1, 10 + 3)
@@ -98,20 +98,24 @@ class DDPG(object):
         gt = state[:, 3 : 6].float() / 255
         canvas0 = state[:, :3].float() / 255
         canvas1 = decode(action, canvas0)
-        gan_reward = cal_reward(canvas1, gt) - cal_reward(canvas0, gt)
-        # L2_reward = ((canvas0 - gt) ** 2).mean(1).mean(1).mean(1) - ((canvas1 - gt) ** 2).mean(1).mean(1).mean(1)        
+
+        # gan_reward = cal_reward(canvas1, gt) - cal_reward(canvas0, gt)
+        # L_2_reward = ((canvas0 - gt) ** 2).mean(1).mean(1).mean(1) - ((canvas1 - gt) ** 2).mean(1).mean(1).mean(1)        
+        L_half_reward = (torch.abs(canvas0 - gt) ** 0.5).mean(1).mean(1).mean(1) - (torch.abs(canvas1 - gt) ** 0.5).mean(1).mean(1).mean(1)
+        # L_1_reward = (torch.abs(canvas0 - gt)).mean(1).mean(1).mean(1) - (torch.abs(canvas1 - gt)).mean(1).mean(1).mean(1)
+        reward = L_half_reward
         coord_ = coord.expand(state.shape[0], 2, 128, 128)
         merged_state = torch.cat([canvas0, canvas1, gt, (T + 1).float() / self.max_step, coord_], 1)
         # canvas0 is not necessarily added
         if target:
             Q = self.critic_target(merged_state)
-            return (Q + gan_reward), gan_reward
+            return (Q + reward), reward
         else:
             Q = self.critic(merged_state)
             if self.log % 20 == 0:
                 self.writer.add_scalar('train/expect_reward', Q.mean(), self.log)
-                self.writer.add_scalar('train/gan_reward', gan_reward.mean(), self.log)
-            return (Q + gan_reward), gan_reward
+                self.writer.add_scalar('train/l_half_reward', reward.mean(), self.log)
+            return (Q + reward), reward
     
     def update_policy(self, lr):
         self.log += 1
