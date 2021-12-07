@@ -10,6 +10,7 @@ from DRL.critic import *
 from DRL.wgan import *
 from utils.util import *
 from DRL.content_loss import *
+from DRL.vgg import *
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 coord = torch.zeros([1, 2, 128, 128])
@@ -23,6 +24,16 @@ criterion = nn.MSELoss()
 
 Decoder = FCN()
 Decoder.load_state_dict(torch.load('../renderer.pkl'))
+vgg = VGG()
+vgg.load_state_dict(torch.load('../vgg_conv.pth'))
+for param in vgg.parameters():
+    param.requires_grad = False
+if torch.cuda.is_available():
+    vgg.cuda()
+
+content_layers = ['r42']
+style_layers = ['r11','r21','r31','r41', 'r51']
+loss_fns = [nn.MSELoss()] * len(content_layers)
 
 def decode(x, canvas): # b * (10 + 3)
     x = x.view(-1, 10 + 3)
@@ -39,6 +50,19 @@ def decode(x, canvas): # b * (10 + 3)
 
 def cal_trans(s, t):
     return (s.transpose(0, 3) * t).transpose(0, 3)
+
+def cal_perceptual_reward(canvas0, canvas1, target):
+    content_targets = [A.detach() for A in vgg(target, content_layers)]
+    out_canvas_0 = vgg(canvas0, content_layers)
+    out_canvas_1 = vgg(canvas1, content_layers)
+    # perceptual loss (canvas0, target)
+    layer_losses_0 = [loss_fns[a](A, content_targets[a]) for a,A in enumerate(out_canvas_0)]
+    loss_0 = sum(layer_losses_0)
+    # perceptual loss (canvas1, target)
+    layer_losses_1 = [loss_fns[a](A, content_targets[a]) for a,A in enumerate(out_canvas_1)]
+    loss_1 = sum(layer_losses_1)
+    return loss_0 - loss_1
+
 
 class DDPG(object):
     def __init__(self, batch_size=64, env_batch=1, max_step=40, \
@@ -99,18 +123,15 @@ class DDPG(object):
         gt = state[:, 3 : 6].float() / 255
         canvas0 = state[:, :3].float() / 255
         canvas1 = decode(action, canvas0)
-        gan_reward = cal_reward(canvas1, gt) - cal_reward(canvas0, gt)
-        L2_reward = ((canvas0 - gt) ** 2).mean(1).mean(1).mean(1) - ((canvas1 - gt) ** 2).mean(1).mean(1).mean(1)
-        feature_canvas0 = extract_features(canvas0)
-        feature_target = extract_features(gt)
-        feature_canvas1 = extract_features(canvas1)
-        conceptual_reward = ((feature_canvas0 - feature_target) ** 2).mean(1).mean(1).mean(1) - ((feature_canvas1 - feature_target) ** 2).mean(1).mean(1).mean(1)
+        #gan_reward = cal_reward(canvas1, gt) - cal_reward(canvas0, gt)
+        #L2_reward = ((canvas0 - gt) ** 2).mean(1).mean(1).mean(1) - ((canvas1 - gt) ** 2).mean(1).mean(1).mean(1)
+        perceptual_reward = cal_perceptual_reward(canvas0, canvas1, gt)
         coord_ = coord.expand(state.shape[0], 2, 128, 128)
         merged_state = torch.cat([canvas0, canvas1, gt, (T + 1).float() / self.max_step, coord_], 1)
         # canvas0 is not necessarily added
         if target:
             Q = self.critic_target(merged_state)
-            return (Q + conceptual_reward), conceptual_reward
+            return Q + perceptual_reward, perceptual_reward
             #return (Q + gan_reward), gan_reward
         else:
             Q = self.critic(merged_state)
@@ -118,7 +139,7 @@ class DDPG(object):
                 self.writer.add_scalar('train/expect_reward', Q.mean(), self.log)
                 self.writer.add_scalar('train/gan_reward', gan_reward.mean(), self.log)
             #return (Q + gan_reward), gan_reward
-            return (Q + conceptual_reward), conceptual_reward
+            return Q + perceptual_reward, perceptual_reward
 
     def update_policy(self, lr):
         self.log += 1
