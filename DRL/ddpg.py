@@ -24,9 +24,9 @@ coord = coord.to(device)
 criterion = nn.MSELoss()
 
 Decoder = FCN()
-Decoder.load_state_dict(torch.load('../renderer.pkl'))
+Decoder.load_state_dict(torch.load('./renderer.pkl'))
 vgg = VGG()
-vgg.load_state_dict(torch.load('../vgg_conv.pth'))
+vgg.load_state_dict(torch.load('./vgg_conv.pth'))
 for param in vgg.parameters():
     param.requires_grad = False
 if torch.cuda.is_available():
@@ -54,9 +54,8 @@ def cal_content_loss(canvas0, canvas1, target):
 def cal_style_loss(canvas0, canvas1, target):
     out_0 = GramMatrix()(canvas0)
     out_1 = GramMatrix()(canvas1)
-    #print(out_0.shape)
     return ((out_0 - target) ** 2).mean(1).mean(1) - ((out_1 - target) ** 2).mean(1).mean(1)
- 
+
 def cal_perceptual_style_reward(canvas0, canvas1, target):
     style_targets = [GramMatrix()(A).detach() for A in vgg(target, style_layers)]
     content_targets = [A.detach() for A in vgg(target, content_layers)]
@@ -111,16 +110,17 @@ class DDPG(object):
 
         self.max_step = max_step
         self.env_batch = env_batch
-        self.batch_size = batch_size   
+        self.batch_size = batch_size
         self.state_size = 9
         self.add = 3
         if loss_mode == 'cml1':
-          self.state_size = 10
-          self.add = 5
+            self.state_size = 10
+            self.add = 5
         self.actor = ResNet(self.state_size, 18, 65) # target, canvas, stepnum, coordconv 3 + 3 + 1 + 2
         self.actor_target = ResNet(self.state_size, 18, 65)
         self.critic = ResNet_wobn(self.add + self.state_size, 18, 1) # add the last canvas for better prediction
-        self.critic_target = ResNet_wobn(self.add + self.state_size, 18, 1) 
+        self.critic_target = ResNet_wobn(self.add + self.state_size, 18, 1)
+
 
         self.actor_optim  = Adam(self.actor.parameters(), lr=1e-2)
         self.critic_optim  = Adam(self.critic.parameters(), lr=1e-2)
@@ -130,7 +130,7 @@ class DDPG(object):
 
         hard_update(self.actor_target, self.actor)
         hard_update(self.critic_target, self.critic)
-        
+
         # Create replay buffer
         self.memory = rpm(rmsize * max_step)
 
@@ -141,10 +141,10 @@ class DDPG(object):
         # Tensorboard
         self.writer = writer
         self.log = 0
-        
+
         self.state = [None] * self.env_batch # Most recent state
         self.action = [None] * self.env_batch # Most recent action
-        self.choose_device()        
+        self.choose_device()
 
     def play(self, state, target=False):
         if self.loss_mode == 'cml1':
@@ -166,8 +166,8 @@ class DDPG(object):
         if self.log % 20 == 0:
             self.writer.add_scalar('train/gan_fake', fake, self.log)
             self.writer.add_scalar('train/gan_real', real, self.log)
-            self.writer.add_scalar('train/gan_penal', penal, self.log)       
-        
+            self.writer.add_scalar('train/gan_penal', penal, self.log)
+
     def evaluate(self, state, action, target=False, mask = None):
         T = state[:, 6 : 7]
         gt = state[:, 3 : 6].float() / 255
@@ -176,15 +176,14 @@ class DDPG(object):
         if self.loss_mode == 'cm':
             T = state[:, 6+1 : 7+1]
             mask = state[:, 6:7].float() / 255
-        
+
         reward = 0
         if self.loss_mode == 'gan':
           reward = cal_reward(canvas1, gt) - cal_reward(canvas0, gt)
         elif self.loss_mode == 'l2':
-          reward = ((canvas0 - gt) ** 2).mean(1).mean(1).mean(1) - ((canvas1 - gt) ** 2).mean(1).mean(1).mean(1)        
+          reward = ((canvas0 - gt) ** 2).mean(1).mean(1).mean(1) - ((canvas1 - gt) ** 2).mean(1).mean(1).mean(1)
         elif self.loss_mode == 'cml1':
           reward, mask = content_mask_l1_reward(canvas0, canvas1, gt)
-        #add style loss
         elif self.loss_mode == 'style':
           reward = cal_perceptual_style_reward(canvas0, canvas1, gt)
         coord_ = coord.expand(state.shape[0], 2, 128, 128)
@@ -192,7 +191,7 @@ class DDPG(object):
           merged_state = torch.cat([canvas0, canvas1, gt, mask, (T + 1).float() / self.max_step, coord_], 1)
         else:
           merged_state = torch.cat([canvas0, canvas1, gt, (T + 1).float() / self.max_step, coord_], 1)
-        
+
         # canvas0 is not necessarily added
         #print(merged_state.shape)
         if target:
@@ -204,29 +203,29 @@ class DDPG(object):
                 self.writer.add_scalar('train/expect_reward', Q.mean(), self.log)
                 self.writer.add_scalar('train/reward', reward.mean(), self.log)
             return (Q + reward), reward
-    
+
     def update_policy(self, lr):
         self.log += 1
-        
+
         for param_group in self.critic_optim.param_groups:
             param_group['lr'] = lr[0]
         for param_group in self.actor_optim.param_groups:
             param_group['lr'] = lr[1]
-            
+
         # Sample batch
         state, action, reward, \
             next_state, terminal, mask = self.memory.sample_batch(self.batch_size, device)
         if self.loss_mode == 'gan':
           self.update_gan(next_state)
-        
+
         with torch.no_grad():
             next_action = self.play(next_state, True)
             target_q, _ = self.evaluate(next_state, next_action, True, mask)
             target_q = self.discount * ((1 - terminal.float()).view(-1, 1)) * target_q
-                
+
         cur_q, step_reward = self.evaluate(state, action, mask = mask)
         target_q += step_reward.detach()
-        
+
         value_loss = criterion(cur_q, target_q)
         self.critic.zero_grad()
         value_loss.backward(retain_graph=True)
@@ -238,7 +237,7 @@ class DDPG(object):
         self.actor.zero_grad()
         policy_loss.backward(retain_graph=True)
         self.actor_optim.step()
-        
+
         # Target update
         soft_update(self.actor_target, self.actor, self.tau)
         soft_update(self.critic_target, self.critic, self.tau)
@@ -257,7 +256,7 @@ class DDPG(object):
             mask_add = m[i]
           else:
             mask_add = None
-            self.memory.append([s0[i], a[i], r[i], s1[i], d[i], mask_add])
+          self.memory.append([s0[i], a[i], r[i], s1[i], d[i], mask_add])
         self.state = state
 
     def noise_action(self, noise_factor, state, action):
@@ -265,13 +264,14 @@ class DDPG(object):
         for i in range(self.env_batch):
             action[i] = action[i] + np.random.normal(0, self.noise_level[i], action.shape[1:]).astype('float32')
         return np.clip(action.astype('float32'), 0, 1)
-    
+
     def select_action(self, state, return_fix=False, noise_factor=0):
         self.eval()
         with torch.no_grad():
+            state = to_numpy(state)
             action = self.play(state)
             action = to_numpy(action)
-        if noise_factor > 0:        
+        if noise_factor > 0:
             action = self.noise_action(noise_factor, state, action)
         self.train()
         self.action = action
@@ -289,7 +289,7 @@ class DDPG(object):
         self.critic.load_state_dict(torch.load('{}/critic.pkl'.format(path)))
         if self.loss_mode == 'gan':
           load_gan(path)
-        
+
     def save_model(self, path):
         self.actor.cpu()
         self.critic.cpu()
@@ -303,13 +303,13 @@ class DDPG(object):
         self.actor_target.eval()
         self.critic.eval()
         self.critic_target.eval()
-    
+
     def train(self):
         self.actor.train()
         self.actor_target.train()
         self.critic.train()
         self.critic_target.train()
-    
+
     def choose_device(self):
         Decoder.to(device)
         self.actor.to(device)
