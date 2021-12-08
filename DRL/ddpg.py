@@ -56,13 +56,17 @@ def cal_perceptual_reward(canvas0, canvas1, target):
     out_canvas_0 = vgg(canvas0, content_layers)
     out_canvas_1 = vgg(canvas1, content_layers)
     # perceptual loss (canvas0, target)
-    layer_losses_0 = [loss_fns[a](A, content_targets[a]) for a,A in enumerate(out_canvas_0)]
-    loss_0 = sum(layer_losses_0)
+    #layer_losses_0 = [loss_fns[a](A, content_targets[a]) for a,A in enumerate(out_canvas_0)]
+    #loss_0 = sum(layer_losses_0)
     # perceptual loss (canvas1, target)
-    layer_losses_1 = [loss_fns[a](A, content_targets[a]) for a,A in enumerate(out_canvas_1)]
-    loss_1 = sum(layer_losses_1)
-    return loss_0 - loss_1
-
+    #layer_losses_1 = [loss_fns[a](A, content_targets[a]) for a,A in enumerate(out_canvas_1)]
+    perceptual_reward = ((out_canvas_0[0] - content_targets[0]) ** 2).mean(1).mean(1).mean(1) - ((out_canvas_1[0] - content_targets[0]) ** 2).mean(1).mean(1).mean(1)
+    # print('vgg output shape')
+    # print(out_canvas_0[0].shape)
+    # print('perceptual loss shape')
+    # print(perceptual_reward.shape)
+    #loss_1 = sum(layer_losses_1)
+    return perceptual_reward
 
 class DDPG(object):
     def __init__(self, batch_size=64, env_batch=1, max_step=40, \
