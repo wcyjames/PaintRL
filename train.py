@@ -94,6 +94,7 @@ if __name__ == "__main__":
     parser.add_argument('--output', default='./model', type=str, help='Resuming model path for testing')
     parser.add_argument('--debug', dest='debug', action='store_true', help='print some info')
     parser.add_argument('--seed', default=1234, type=int, help='random seed')
+    parser.add_argument('--loss_mode', default='style', type=str, help='loss mode')
 
     args = parser.parse_args()
     args.output = get_output_folder(args.output, "Paint")
