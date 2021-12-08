@@ -9,16 +9,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class fastenv():
     def __init__(self, 
                  max_episode_length=10, env_batch=64, \
-                 writer=None):
+                 writer=None, loss_mode = None):
         self.max_episode_length = max_episode_length
         self.env_batch = env_batch
-        self.env = Paint(self.env_batch, self.max_episode_length)
+        self.env = Paint(self.env_batch, self.max_episode_length, loss_mode)
         self.env.load_data()
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
         self.writer = writer
         self.test = False
         self.log = 0
+        self.loss_mode = loss_mode
 
     def save_image(self, log, step):
         for i in range(self.env_batch):
@@ -35,14 +36,14 @@ class fastenv():
     
     def step(self, action):
         with torch.no_grad():
-            ob, r, d, _ = self.env.step(torch.tensor(action).to(device))
+            ob, r, d, _, mask = self.env.step(torch.tensor(action).to(device))
         if d[0]:
             if not self.test:
                 self.dist = self.get_dist()
                 for i in range(self.env_batch):
                     self.writer.add_scalar('train/dist', self.dist[i], self.log)
                     self.log += 1
-        return ob, r, d, _
+        return ob, r, d, _, mask
 
     def get_dist(self):
         return to_numpy((((self.env.gt.float() - self.env.canvas.float()) / 255) ** 2).mean(1).mean(1).mean(1))
