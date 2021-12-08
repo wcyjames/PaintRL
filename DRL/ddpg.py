@@ -268,7 +268,6 @@ class DDPG(object):
     def select_action(self, state, return_fix=False, noise_factor=0):
         self.eval()
         with torch.no_grad():
-            state = to_numpy(state)
             action = self.play(state)
             action = to_numpy(action)
         if noise_factor > 0:
