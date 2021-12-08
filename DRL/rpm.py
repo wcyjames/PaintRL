@@ -38,6 +38,9 @@ class rpm(object):
             item_count = 6
             res = []
             for i in range(6):
+                if batch[0][i] is None:
+                    res.append(None) # No mask
+                    continue
                 k = torch.stack(tuple(item[i] for item in batch), dim=0)
                 res.append(k.to(device))
             return res[0], res[1], res[2], res[3], res[4], res[5]

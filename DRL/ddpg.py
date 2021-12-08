@@ -25,6 +25,12 @@ criterion = nn.MSELoss()
 
 Decoder = FCN()
 Decoder.load_state_dict(torch.load('../renderer.pkl'))
+vgg = VGG()
+vgg.load_state_dict(torch.load('../vgg_conv.pth'))
+for param in vgg.parameters():
+    param.requires_grad = False
+if torch.cuda.is_available():
+    vgg.cuda()
 
 def decode(x, canvas): # b * (10 + 3)
     x = x.view(-1, 10 + 3)
@@ -48,10 +54,11 @@ def cal_content_loss(canvas0, canvas1, target):
 def cal_style_loss(canvas0, canvas1, target):
     out_0 = GramMatrix()(canvas0)
     out_1 = GramMatrix()(canvas1)
-    return ((out_0 - target) ** 2).mean(1).mean(1).mean(1) - ((out_1 - target) ** 2).mean(1).mean(1).mean(1)
+    #print(out_0.shape)
+    return ((out_0 - target) ** 2).mean(1).mean(1) - ((out_1 - target) ** 2).mean(1).mean(1)
  
 def cal_perceptual_style_reward(canvas0, canvas1, target):
-    style_targets = [GramMatrix()(A).detach() for A in vgg(style_image, style_layers)]
+    style_targets = [GramMatrix()(A).detach() for A in vgg(target, style_layers)]
     content_targets = [A.detach() for A in vgg(target, content_layers)]
     targets = style_targets + content_targets
     out_canvas_0 = vgg(canvas0, loss_layers)
@@ -61,7 +68,7 @@ def cal_perceptual_style_reward(canvas0, canvas1, target):
     #loss_0 = sum(layer_losses_0)
     # perceptual loss (canvas1, target)
     #layer_losses_1 = [loss_fns[a](A, content_targets[a]) for a,A in enumerate(out_canvas_1)]
-    layer_losses = [weights[a] * loss_fns[i](out_canvas_0[i],out_canvas_1[i], targets[i]) for i in range(len(content_targets))]
+    layer_losses = [weights[i] * loss_fns[i](out_canvas_0[i],out_canvas_1[i], targets[i]) for i in range(len(content_targets))]
     #perceptual_reward = ((out_canvas_0[0] - content_targets[0]) ** 2).mean(1).mean(1).mean(1) - ((out_canvas_1[0] - content_targets[0]) ** 2).mean(1).mean(1).mean(1)
     # print('vgg output shape')
     # print(out_canvas_0[0].shape)
@@ -89,6 +96,14 @@ def content_mask_l1_reward(canvas0, canvas1, gt):
     reward = (l1_0 * mask).mean(1).mean(1).mean(1) - (l1_1 * mask).mean(1).mean(1).mean(1)
     return reward, mask
 
+content_layers = ['r42']
+style_layers = ['r11','r21','r31','r41', 'r51']
+loss_layers = style_layers + content_layers
+loss_fns =[cal_style_loss] * len(style_layers) + [cal_content_loss] * len(content_layers)
+style_weights = [1e3/n**2 for n in [64,128,256,512,512]]
+content_weights = [1e0]
+weights = style_weights + content_weights
+
 class DDPG(object):
     def __init__(self, batch_size=64, env_batch=1, max_step=40, \
                  tau=0.001, discount=0.9, rmsize=800, \
@@ -98,12 +113,14 @@ class DDPG(object):
         self.env_batch = env_batch
         self.batch_size = batch_size   
         self.state_size = 9
+        self.add = 3
         if loss_mode == 'cml1':
           self.state_size = 10
+          self.add = 5
         self.actor = ResNet(self.state_size, 18, 65) # target, canvas, stepnum, coordconv 3 + 3 + 1 + 2
         self.actor_target = ResNet(self.state_size, 18, 65)
-        self.critic = ResNet_wobn(5 + self.state_size, 18, 1) # add the last canvas for better prediction
-        self.critic_target = ResNet_wobn(5 + self.state_size, 18, 1) 
+        self.critic = ResNet_wobn(self.add + self.state_size, 18, 1) # add the last canvas for better prediction
+        self.critic_target = ResNet_wobn(self.add + self.state_size, 18, 1) 
 
         self.actor_optim  = Adam(self.actor.parameters(), lr=1e-2)
         self.critic_optim  = Adam(self.critic.parameters(), lr=1e-2)
@@ -168,6 +185,8 @@ class DDPG(object):
         elif self.loss_mode == 'cml1':
           reward, mask = content_mask_l1_reward(canvas0, canvas1, gt)
         #add style loss
+        elif self.loss_mode == 'style':
+          reward = cal_perceptual_style_reward(canvas0, canvas1, gt)
         coord_ = coord.expand(state.shape[0], 2, 128, 128)
         if self.loss_mode == 'cml1':
           merged_state = torch.cat([canvas0, canvas1, gt, mask, (T + 1).float() / self.max_step, coord_], 1)
@@ -234,7 +253,11 @@ class DDPG(object):
         d = to_tensor(done.astype('float32'), "cpu")
         m = mask.cpu().clone().detach() if mask is not None else None
         for i in range(self.env_batch):
-            self.memory.append([s0[i], a[i], r[i], s1[i], d[i], m[i] if mask is not None else None])
+          if mask is not None:
+            mask_add = m[i]
+          else:
+            mask_add = None
+            self.memory.append([s0[i], a[i], r[i], s1[i], d[i], mask_add])
         self.state = state
 
     def noise_action(self, noise_factor, state, action):
