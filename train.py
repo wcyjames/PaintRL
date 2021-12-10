@@ -94,6 +94,8 @@ if __name__ == "__main__":
     parser.add_argument('--output', default='./model', type=str, help='Resuming model path for testing')
     parser.add_argument('--debug', dest='debug', action='store_true', help='print some info')
     parser.add_argument('--seed', default=1234, type=int, help='random seed')
+
+    parser.add_argument('--canvas_color', default=None, type=str, help='canvas color')
     
     args = parser.parse_args()    
     args.output = get_output_folder(args.output, "Paint")
@@ -105,7 +107,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     from DRL.ddpg import DDPG
     from DRL.multi import fastenv
-    fenv = fastenv(args.max_step, args.env_batch, writer)
+    fenv = fastenv(args.max_step, args.env_batch, writer, args.canvas_color)
     agent = DDPG(args.batch_size, args.env_batch, args.max_step, \
                  args.tau, args.discount, args.rmsize, \
                  writer, args.resume, args.output)
