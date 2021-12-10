@@ -7,13 +7,16 @@ from DRL.ddpg import decode
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class fastenv():
-    def __init__(self, 
+    def __init__(self,
                  max_episode_length=10, env_batch=64, \
-                 writer=None, loss_mode = None):
+                 writer=None, loss_mode = None, dataset = 'celeb'):
         self.max_episode_length = max_episode_length
         self.env_batch = env_batch
         self.env = Paint(self.env_batch, self.max_episode_length, loss_mode)
-        self.env.load_data()
+        if dataset == 'monet':
+          self.env.load_monet_data()
+        else:
+          self.env.load_data()
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
         self.writer = writer
@@ -33,7 +36,7 @@ class fastenv():
                     canvas = cv2.cvtColor((to_numpy(self.env.canvas[i].permute(1, 2, 0))), cv2.COLOR_BGR2RGB)
                     self.writer.add_image(str(self.env.imgid[i]) + '/_target.png', gt, log)
                     self.writer.add_image(str(self.env.imgid[i]) + '/_canvas.png', canvas, log)
-    
+
     def step(self, action):
         with torch.no_grad():
             ob, r, d, _, mask = self.env.step(torch.tensor(action).to(device))
@@ -47,7 +50,7 @@ class fastenv():
 
     def get_dist(self):
         return to_numpy((((self.env.gt.float() - self.env.canvas.float()) / 255) ** 2).mean(1).mean(1).mean(1))
-        
+
     def reset(self, test=False, episode=0):
         self.test = test
         ob = self.env.reset(self.test, episode * self.env_batch)

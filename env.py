@@ -37,6 +37,36 @@ class Paint:
         self.mask_test = []
 
 
+    def load_monet_data(self):
+        global train_num, test_num
+        for i in range(7001):
+            img_id = '%d' %(i+1)
+            try:
+                img = cv2.imread('./data/monet_style/' + img_id + '.jpg', cv2.IMREAD_UNCHANGED)
+                img = cv2.resize(img, (width, width))
+                if i > 2000:
+                    train_num += 1
+                    img_train.append(img)
+                    if self.loss_mode == 'cml1':
+                            mask = get_l2_mask(torch.unsqueeze(torch.tensor(np.transpose(img.astype('float32'), (2, 0, 1))), 0) / 255).cpu()[:,0,:,:]
+                            mask = mask.numpy() * 255
+                            mask = mask.astype(np.uint8)
+                            #print(mask.shape, img.shape, len(img_train), len(mask_train))
+                            self.mask_train.append(mask)
+                else:
+                    test_num += 1
+                    img_test.append(img)
+                    if self.loss_mode == 'cml1':
+                            mask = get_l2_mask(torch.unsqueeze(torch.tensor(np.transpose(img.astype('float32'), (2, 0, 1))), 0) / 255).cpu()[:,0,:,:]
+                            mask = mask.numpy() * 255
+                            mask = mask.astype(np.uint8)
+                            #print(mask.shape, img.shape, len(img_test), len(mask_test), type(img[0,0,0]), type(mask[0,0,0]))
+                            self.mask_test.append(mask)
+            finally:
+                if (i + 1) % 10000 == 0:
+                    print('loaded {} images'.format(i + 1))
+        print('finish loading data, {} training images, {} testing images'.format(str(train_num), str(test_num)))
+
     def load_data(self):
         # CelebA
         global train_num, test_num

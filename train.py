@@ -95,6 +95,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug', dest='debug', action='store_true', help='print some info')
     parser.add_argument('--seed', default=1234, type=int, help='random seed')
     parser.add_argument('--loss_mode', default='style', type=str, help='loss mode')
+    parser.add_argument('--dataset', default='celeb', type=str, help='dataset [monet/celeb]')
 
     args = parser.parse_args()
     args.output = get_output_folder(args.output, "Paint")
@@ -106,7 +107,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     from DRL.ddpg import DDPG
     from DRL.multi import fastenv
-    fenv = fastenv(args.max_step, args.env_batch, writer, args.loss_mode)
+    fenv = fastenv(args.max_step, args.env_batch, writer, args.loss_mode, args.dataset)
     agent = DDPG(args.batch_size, args.env_batch, args.max_step, \
                  args.tau, args.discount, args.rmsize, \
                  writer, args.resume, args.output, args.loss_mode)

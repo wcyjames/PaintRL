@@ -36,16 +36,15 @@ class Paint:
         self.mask_train = []
         self.mask_test = []
 
-        
-    def load_data(self):
-        # CelebA
+
+    def load_monet_data(self):
         global train_num, test_num
-        for i in range(20000):
-            img_id = '%06d' % (i + 1)
+        for i in range(7001):
+            img_id = '%d' %(i+1)
             try:
-                img = cv2.imread('../data/img_align_celeba/' + img_id + '.jpg', cv2.IMREAD_UNCHANGED)
+                img = cv2.imread('./data/monet_style/' + img_id + '.jpg', cv2.IMREAD_UNCHANGED)
                 img = cv2.resize(img, (width, width))
-                if i > 2000:                
+                if i > 2000:
                     train_num += 1
                     img_train.append(img)
                     if self.loss_mode == 'cml1':
@@ -64,10 +63,41 @@ class Paint:
                             #print(mask.shape, img.shape, len(img_test), len(mask_test), type(img[0,0,0]), type(mask[0,0,0]))
                             self.mask_test.append(mask)
             finally:
-                if (i + 1) % 10000 == 0:                    
+                if (i + 1) % 10000 == 0:
                     print('loaded {} images'.format(i + 1))
         print('finish loading data, {} training images, {} testing images'.format(str(train_num), str(test_num)))
-        
+
+    def load_data(self):
+        # CelebA
+        global train_num, test_num
+        for i in range(20000):
+            img_id = '%06d' % (i + 1)
+            try:
+                img = cv2.imread('../data/img_align_celeba/' + img_id + '.jpg', cv2.IMREAD_UNCHANGED)
+                img = cv2.resize(img, (width, width))
+                if i > 2000:
+                    train_num += 1
+                    img_train.append(img)
+                    if self.loss_mode == 'cml1':
+                            mask = get_l2_mask(torch.unsqueeze(torch.tensor(np.transpose(img.astype('float32'), (2, 0, 1))), 0) / 255).cpu()[:,0,:,:]
+                            mask = mask.numpy() * 255
+                            mask = mask.astype(np.uint8)
+                            #print(mask.shape, img.shape, len(img_train), len(mask_train))
+                            self.mask_train.append(mask)
+                else:
+                    test_num += 1
+                    img_test.append(img)
+                    if self.loss_mode == 'cml1':
+                            mask = get_l2_mask(torch.unsqueeze(torch.tensor(np.transpose(img.astype('float32'), (2, 0, 1))), 0) / 255).cpu()[:,0,:,:]
+                            mask = mask.numpy() * 255
+                            mask = mask.astype(np.uint8)
+                            #print(mask.shape, img.shape, len(img_test), len(mask_test), type(img[0,0,0]), type(mask[0,0,0]))
+                            self.mask_test.append(mask)
+            finally:
+                if (i + 1) % 10000 == 0:
+                    print('loaded {} images'.format(i + 1))
+        print('finish loading data, {} training images, {} testing images'.format(str(train_num), str(test_num)))
+
     def pre_data(self, id, test):
         if test:
             img = img_test[id]
@@ -77,7 +107,7 @@ class Paint:
             img = aug(img)
         img = np.asarray(img)
         return np.transpose(img, (2, 0, 1))
-    
+
     def get_mask(self, id, test):
         if test:
             img = self.mask_test[id]
@@ -109,7 +139,7 @@ class Paint:
         self.canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.uint8).to(device)
         self.lastdis = self.ini_dis = self.cal_dis()
         return self.observation()
-    
+
     def observation(self):
         # canvas B * 3 * width * width
         # gt B * 3 * width * width
@@ -123,7 +153,7 @@ class Paint:
 
     def cal_trans(self, s, t):
         return (s.transpose(0, 3) * t).transpose(0, 3)
-    
+
     def step(self, action):
         self.canvas = (decode(action, self.canvas.float() / 255) * 255).byte()
         self.stepnum += 1
@@ -134,7 +164,7 @@ class Paint:
 
     def cal_dis(self):
         return (((self.canvas.float() - self.gt.float()) / 255) ** 2).mean(1).mean(1).mean(1)
-    
+
     def cal_reward(self):
         dis = self.cal_dis()
         reward = (self.lastdis - dis) / (self.ini_dis + 1e-8)

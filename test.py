@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from DRL.actor import *
 from Renderer.stroke_gen import *
 from Renderer.model import *
+from DRL.content_loss import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 width = 128
@@ -20,6 +21,7 @@ parser.add_argument('--renderer', default='./renderer.pkl', type=str, help='rend
 parser.add_argument('--img', default='image/test.png', type=str, help='test image')
 parser.add_argument('--imgid', default=0, type=int, help='set begin number for generated image')
 parser.add_argument('--divide', default=4, type=int, help='divide the target image to get better resolution')
+parser.add_argument('--loss_mode', default='cml1', type=str, help='loss mode')
 args = parser.parse_args()
 
 canvas_cnt = args.divide * args.divide
@@ -53,7 +55,7 @@ def decode(x, canvas): # b * (10 + 3)
     return canvas, res
 
 def small2large(x):
-    # (d * d, width, width) -> (d * width, d * width)    
+    # (d * d, width, width) -> (d * width, d * width)
     x = x.reshape(args.divide, args.divide, width, width, -1)
     x = np.transpose(x, (0, 2, 1, 3, 4))
     x = x.reshape(args.divide * width, args.divide * width, -1)
@@ -68,7 +70,7 @@ def large2small(x):
 
 def smooth(img):
     def smooth_pix(img, tx, ty):
-        if tx == args.divide * width - 1 or ty == args.divide * width - 1 or tx == 0 or ty == 0: 
+        if tx == args.divide * width - 1 or ty == args.divide * width - 1 or tx == 0 or ty == 0:
             return img
         img[tx, ty] = (img[tx, ty] + img[tx + 1, ty] + img[tx, ty + 1] + img[tx - 1, ty] + img[tx, ty - 1] + img[tx + 1, ty - 1] + img[tx - 1, ty + 1] + img[tx - 1, ty - 1] + img[tx + 1, ty + 1]) / 9
         return img
@@ -88,7 +90,7 @@ def smooth(img):
     return img
 
 def save_img(res, imgid, divide=False):
-    output = res.detach().cpu().numpy() # d * d, 3, width, width    
+    output = res.detach().cpu().numpy() # d * d, 3, width, width
     output = np.transpose(output, (0, 2, 3, 1))
     if divide:
         output = small2large(output)
@@ -99,7 +101,10 @@ def save_img(res, imgid, divide=False):
     output = cv2.resize(output, origin_shape)
     cv2.imwrite('output/generated' + str(imgid) + '.png', output)
 
-actor = ResNet(9, 18, 65) # action_bundle = 5, 65 = 5 * 13
+if args.loss_mode == 'cml1':
+  actor = ResNet(10, 18, 65) # action_bundle = 5, 65 = 5 * 13
+else:
+  actor = ResNet(9, 18, 65)
 actor.load_state_dict(torch.load(args.actor))
 actor = actor.to(device).eval()
 Decoder = Decoder.to(device).eval()
@@ -112,7 +117,10 @@ patch_img = np.transpose(patch_img, (0, 3, 1, 2))
 patch_img = torch.tensor(patch_img).to(device).float() / 255.
 
 img = cv2.resize(img, (width, width))
+img_mask = get_l2_mask(torch.unsqueeze(torch.tensor(np.transpose(img.astype('float32'), (2, 0, 1))), 0) / 255)[:,0,:,:].to(device).float()
+img_mask = img_mask[None,:]
 img = img.reshape(1, width, width, 3)
+
 img = np.transpose(img, (0, 3, 1, 2))
 img = torch.tensor(img).to(device).float() / 255.
 
@@ -123,7 +131,10 @@ with torch.no_grad():
         args.max_step = args.max_step // 2
     for i in range(args.max_step):
         stepnum = T * i / args.max_step
-        actions = actor(torch.cat([canvas, img, stepnum, coord], 1))
+        if args.loss_mode == 'cml1':
+          actions = actor(torch.cat([canvas, img, img_mask, stepnum, coord], 1))
+        else:
+          actions = actor(torch.cat([canvas, img, stepnum, coord], 1))
         canvas, res = decode(actions, canvas)
         print('canvas step {}, L2Loss = {}'.format(i, ((canvas - img) ** 2).mean()))
         for j in range(5):
@@ -131,16 +142,21 @@ with torch.no_grad():
             args.imgid += 1
     if args.divide != 1:
         canvas = canvas[0].detach().cpu().numpy()
-        canvas = np.transpose(canvas, (1, 2, 0))    
+        canvas = np.transpose(canvas, (1, 2, 0))
         canvas = cv2.resize(canvas, (width * args.divide, width * args.divide))
         canvas = large2small(canvas)
         canvas = np.transpose(canvas, (0, 3, 1, 2))
         canvas = torch.tensor(canvas).to(device).float()
         coord = coord.expand(canvas_cnt, 2, width, width)
         T = T.expand(canvas_cnt, 1, width, width)
+        if args.loss_mode == 'cml1':
+          img_mask = img_mask.repeat(canvas.shape[0], 1, 1, 1)
         for i in range(args.max_step):
             stepnum = T * i / args.max_step
-            actions = actor(torch.cat([canvas, patch_img, stepnum, coord], 1))
+            if args.loss_mode == 'cml1':
+              actions = actor(torch.cat([canvas, patch_img, img_mask, stepnum, coord], 1))
+            else:
+              actions = actor(torch.cat([canvas, patch_img, stepnum, coord], 1))
             canvas, res = decode(actions, canvas)
             print('divided canvas step {}, L2Loss = {}'.format(i, ((canvas - patch_img) ** 2).mean()))
             for j in range(5):
