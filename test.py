@@ -20,6 +20,7 @@ parser.add_argument('--renderer', default='./renderer.pkl', type=str, help='rend
 parser.add_argument('--img', default='image/test.png', type=str, help='test image')
 parser.add_argument('--imgid', default=0, type=int, help='set begin number for generated image')
 parser.add_argument('--divide', default=4, type=int, help='divide the target image to get better resolution')
+parser.add_argument('--canvas_color', default=None, type=str, help='canvas color')
 args = parser.parse_args()
 
 canvas_cnt = args.divide * args.divide
@@ -104,7 +105,10 @@ actor.load_state_dict(torch.load(args.actor))
 actor = actor.to(device).eval()
 Decoder = Decoder.to(device).eval()
 
-canvas = torch.zeros([1, 3, width, width]).to(device)
+if args.canvas_color == "white":
+    canvas = torch.ones([1, 3, width, width]).to(device)
+else:
+    canvas = torch.zeros([1, 3, width, width]).to(device)
 
 patch_img = cv2.resize(img, (width * args.divide, width * args.divide))
 patch_img = large2small(patch_img)
