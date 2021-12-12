@@ -5,7 +5,7 @@ import numpy as np
 import argparse
 import torchvision.transforms as transforms
 import cv2
-from DRL.ddpg import decode
+from DRL.ddpg import *
 from utils.util import *
 from PIL import Image
 from DRL.content_loss import *
@@ -35,6 +35,7 @@ class Paint:
         self.loss_mode = loss_mode
         self.mask_train = []
         self.mask_test = []
+        self.prev_canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.float32).to(device)
 
 
     def load_monet_data(self):
@@ -73,7 +74,7 @@ class Paint:
         for i in range(20000):
             img_id = '%06d' % (i + 1)
             try:
-                img = cv2.imread('../data/img_align_celeba/' + img_id + '.jpg', cv2.IMREAD_UNCHANGED)
+                img = cv2.imread('./data/img_align_celeba/' + img_id + '.jpg', cv2.IMREAD_UNCHANGED)
                 img = cv2.resize(img, (width, width))
                 if i > 2000:
                     train_num += 1
@@ -137,6 +138,7 @@ class Paint:
         self.tot_reward = ((self.gt.float() / 255) ** 2).mean(1).mean(1).mean(1)
         self.stepnum = 0
         self.canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.uint8).to(device)
+        self.prev_canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.float32).to(device)
         self.lastdis = self.ini_dis = self.cal_dis()
         return self.observation()
 
@@ -159,7 +161,9 @@ class Paint:
         self.stepnum += 1
         ob, mask = self.observation()
         done = (self.stepnum == self.max_step)
-        reward = self.cal_reward() # np.array([0.] * self.batch_size)
+        #reward = self.cal_reward() # np.array([0.] * self.batch_size)
+        reward = cal_perceptual_style_reward(self.prev_canvas.float(), self.canvas.float(), self.gt.float())
+        self.prev_canvas = self.canvas
         return ob.detach(), reward, np.array([done] * self.batch_size), None, mask
 
     def cal_dis(self):

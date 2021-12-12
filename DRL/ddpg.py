@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam, SGD
+import cv2
 from Renderer.model import *
 from DRL.rpm import rpm
 from DRL.actor import *
@@ -57,7 +58,7 @@ def cal_style_loss(canvas0, canvas1, target):
     return ((out_0 - target) ** 2).mean(1).mean(1) - ((out_1 - target) ** 2).mean(1).mean(1)
 
 def cal_perceptual_style_reward(canvas0, canvas1, target):
-    style_targets = [GramMatrix()(A).detach() for A in vgg(target, style_layers)]
+    #style_targets = [GramMatrix()(A).detach() for A in vgg(target, style_layers)]
     content_targets = [A.detach() for A in vgg(target, content_layers)]
     targets = style_targets + content_targets
     out_canvas_0 = vgg(canvas0, loss_layers)
@@ -67,16 +68,26 @@ def cal_perceptual_style_reward(canvas0, canvas1, target):
     #loss_0 = sum(layer_losses_0)
     # perceptual loss (canvas1, target)
     #layer_losses_1 = [loss_fns[a](A, content_targets[a]) for a,A in enumerate(out_canvas_1)]
-    layer_losses = [weights[i] * loss_fns[i](out_canvas_0[i],out_canvas_1[i], targets[i]) for i in range(len(content_targets))]
+    layer_reward = [loss_fns[i](out_canvas_0[i],out_canvas_1[i], targets[i]) for i in range(len(loss_layers))]
+    style_reward = layer_reward[0]
+    for i in range(1, len(style_layers)):
+      style_reward += layer_reward[i]
+    style_reward /= style_scale
+    content_reward = layer_reward[-1]
+    content_reward = content_mask_l1_reward(canvas0, canvas1, target)[0] / content_scale
+    reward = style_weight * style_reward + content_weight * content_reward
     #perceptual_reward = ((out_canvas_0[0] - content_targets[0]) ** 2).mean(1).mean(1).mean(1) - ((out_canvas_1[0] - content_targets[0]) ** 2).mean(1).mean(1).mean(1)
     # print('vgg output shape')
     # print(out_canvas_0[0].shape)
     # print('perceptual loss shape')
     # print(perceptual_reward.shape)
     #loss_1 = sum(layer_losses_1)
-    reward = layer_losses[0]
-    for i in range(1, len(layer_losses)):
-        reward += layer_losses[i]
+    # reward = layer_losses[0]
+    # for i in range(1, len(layer_losses)):
+    #     reward += layer_losses[i]
+    print('content & style reward')
+    print(content_reward.sum())
+    print(style_reward.sum())
     return reward
 
 def content_mask_l1_reward(canvas0, canvas1, gt):
@@ -95,13 +106,29 @@ def content_mask_l1_reward(canvas0, canvas1, gt):
     reward = (l1_0 * mask).mean(1).mean(1).mean(1) - (l1_1 * mask).mean(1).mean(1).mean(1)
     return reward, mask
 
-content_layers = ['r42']
+#content + style
+content_layers = ['r43']
 style_layers = ['r11','r21','r31','r41', 'r51']
+style_weight = 1e1
+content_weight = 1e0
+style_scale = 1e10
+content_scale = 1e-6
 loss_layers = style_layers + content_layers
 loss_fns =[cal_style_loss] * len(style_layers) + [cal_content_loss] * len(content_layers)
 style_weights = [1e3/n**2 for n in [64,128,256,512,512]]
 content_weights = [1e0]
 weights = style_weights + content_weights
+
+# one style image
+style_img = cv2.imread('./image/mosaic.jpg', cv2.IMREAD_UNCHANGED)
+width = 128
+style_img = cv2.resize(style_img, (width, width))
+style_img = torch.tensor(style_img).float().to(device)
+style_img = style_img[None,:]
+style_img = style_img.permute(0,3,1,2)
+print(style_img.shape)
+style_targets = [GramMatrix()(A).detach() for A in vgg(style_img, style_layers)]
+
 
 class DDPG(object):
     def __init__(self, batch_size=64, env_batch=1, max_step=40, \
