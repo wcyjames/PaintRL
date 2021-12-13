@@ -101,7 +101,7 @@ def save_img(res, imgid, divide=False):
     output = cv2.resize(output, origin_shape)
     cv2.imwrite('output/generated' + str(imgid) + '.png', output)
 
-if args.loss_mode == 'cml1':
+if args.loss_mode == 'cml1' or args.loss_mode == 'cml1+style':
   actor = ResNet(10, 18, 65) # action_bundle = 5, 65 = 5 * 13
 else:
   actor = ResNet(9, 18, 65)
@@ -131,7 +131,7 @@ with torch.no_grad():
         args.max_step = args.max_step // 2
     for i in range(args.max_step):
         stepnum = T * i / args.max_step
-        if args.loss_mode == 'cml1':
+        if args.loss_mode == 'cml1' or args.loss_mode == 'cml1+style':
           actions = actor(torch.cat([canvas, img, img_mask, stepnum, coord], 1))
         else:
           actions = actor(torch.cat([canvas, img, stepnum, coord], 1))
@@ -149,11 +149,11 @@ with torch.no_grad():
         canvas = torch.tensor(canvas).to(device).float()
         coord = coord.expand(canvas_cnt, 2, width, width)
         T = T.expand(canvas_cnt, 1, width, width)
-        if args.loss_mode == 'cml1':
+        if args.loss_mode == 'cml1' or args.loss_mode == 'cml1+style':
           img_mask = img_mask.repeat(canvas.shape[0], 1, 1, 1)
         for i in range(args.max_step):
             stepnum = T * i / args.max_step
-            if args.loss_mode == 'cml1':
+            if args.loss_mode == 'cml1' or args.loss_mode == 'cml1+style':
               actions = actor(torch.cat([canvas, patch_img, img_mask, stepnum, coord], 1))
             else:
               actions = actor(torch.cat([canvas, patch_img, stepnum, coord], 1))
