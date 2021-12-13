@@ -25,7 +25,7 @@ coord = coord.to(device)
 criterion = nn.MSELoss()
 
 Decoder = FCN()
-Decoder.load_state_dict(torch.load('./renderer.pkl'))
+Decoder.load_state_dict(torch.load('./renderer_constrained.pkl'))
 vgg = VGG()
 vgg.load_state_dict(torch.load('./vgg_conv.pth'))
 for param in vgg.parameters():
@@ -77,18 +77,28 @@ def cal_perceptual_style_reward(canvas0, canvas1, target):
     content_reward = content_mask_l1_reward(canvas0, canvas1, target)[0] / content_scale
     reward = style_weight * style_reward + content_weight * content_reward
     #perceptual_reward = ((out_canvas_0[0] - content_targets[0]) ** 2).mean(1).mean(1).mean(1) - ((out_canvas_1[0] - content_targets[0]) ** 2).mean(1).mean(1).mean(1)
-    # print('vgg output shape')
-    # print(out_canvas_0[0].shape)
-    # print('perceptual loss shape')
-    # print(perceptual_reward.shape)
-    #loss_1 = sum(layer_losses_1)
-    # reward = layer_losses[0]
-    # for i in range(1, len(layer_losses)):
-    #     reward += layer_losses[i]
-    print('content & style reward')
-    print(content_reward.sum())
-    print(style_reward.sum())
     return reward
+def cml1_style_reward(canvas0, canvas1, gt):
+    targets = style_targets
+    out_canvas_0 = vgg(canvas0, style_layers)
+    out_canvas_1 = vgg(canvas1, style_layers)
+    # perceptual loss (canvas0, target)
+    #layer_losses_0 = [loss_fns[a](A, content_targets[a]) for a,A in enumerate(out_canvas_0)]
+    #loss_0 = sum(layer_losses_0)
+    # perceptual loss (canvas1, target)
+    #layer_losses_1 = [loss_fns[a](A, content_targets[a]) for a,A in enumerate(out_canvas_1)]
+    layer_reward = [weights[i] * loss_fns[i](out_canvas_0[i],out_canvas_1[i], targets[i]) for i in range(len(style_layers))]
+    style_reward = layer_reward[0]
+    for i in range(1, len(style_layers)):
+      style_reward += layer_reward[i]
+    style_reward /= style_scale
+    content_reward, mask = content_mask_l1_reward(canvas0, canvas1, gt)
+    content_reward /= content_scale
+    # print()
+    # print(content_reward.sum())
+    # print(style_reward.sum())
+    reward = style_weight * style_reward + content_weight * content_reward
+    return reward, mask
 
 def content_mask_l1_reward(canvas0, canvas1, gt):
     mask = get_l2_mask(gt).to(torch.float)
@@ -109,10 +119,10 @@ def content_mask_l1_reward(canvas0, canvas1, gt):
 #content + style
 content_layers = ['r43']
 style_layers = ['r11','r21','r31','r41', 'r51']
-style_weight = 1e1
+style_weight = 0.5
 content_weight = 1e0
 style_scale = 1e10
-content_scale = 1e-6
+content_scale = 1e2
 loss_layers = style_layers + content_layers
 loss_fns =[cal_style_loss] * len(style_layers) + [cal_content_loss] * len(content_layers)
 style_weights = [1e3/n**2 for n in [64,128,256,512,512]]
@@ -140,7 +150,7 @@ class DDPG(object):
         self.batch_size = batch_size
         self.state_size = 9
         self.add = 3
-        if loss_mode == 'cml1':
+        if loss_mode == 'cml1' or loss_mode == 'cml1+style':
             self.state_size = 10
             self.add = 5
         self.actor = ResNet(self.state_size, 18, 65) # target, canvas, stepnum, coordconv 3 + 3 + 1 + 2
@@ -174,7 +184,7 @@ class DDPG(object):
         self.choose_device()
 
     def play(self, state, target=False):
-        if self.loss_mode == 'cml1':
+        if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
             state = torch.cat((state[:, :6].float() / 255,  #canvas and target \
                                state[:, 6:7].float() / 255, # mask \
                                state[:, 6+1:7+1].float() / self.max_step, # step num \
@@ -200,7 +210,7 @@ class DDPG(object):
         gt = state[:, 3 : 6].float() / 255
         canvas0 = state[:, :3].float() / 255
         canvas1 = decode(action, canvas0)
-        if self.loss_mode == 'cm':
+        if self.loss_mode == 'cm' or self.loss_mode == 'cml1+style':
             T = state[:, 6+1 : 7+1]
             mask = state[:, 6:7].float() / 255
 
@@ -213,8 +223,10 @@ class DDPG(object):
           reward, mask = content_mask_l1_reward(canvas0, canvas1, gt)
         elif self.loss_mode == 'style':
           reward = cal_perceptual_style_reward(canvas0, canvas1, gt)
+        elif self.loss_mode == 'cml1+style':
+          reward, mask = cml1_style_reward(canvas0, canvas1, gt)
         coord_ = coord.expand(state.shape[0], 2, 128, 128)
-        if self.loss_mode == 'cml1':
+        if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
           merged_state = torch.cat([canvas0, canvas1, gt, mask, (T + 1).float() / self.max_step, coord_], 1)
         else:
           merged_state = torch.cat([canvas0, canvas1, gt, (T + 1).float() / self.max_step, coord_], 1)

@@ -5,7 +5,7 @@ import numpy as np
 import argparse
 import torchvision.transforms as transforms
 import cv2
-from DRL.ddpg import *
+from DRL.ddpg import decode
 from utils.util import *
 from PIL import Image
 from DRL.content_loss import *
@@ -35,8 +35,6 @@ class Paint:
         self.loss_mode = loss_mode
         self.mask_train = []
         self.mask_test = []
-        self.prev_canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.float32).to(device)
-
 
     def load_monet_data(self):
         global train_num, test_num
@@ -48,7 +46,7 @@ class Paint:
                 if i > 2000:
                     train_num += 1
                     img_train.append(img)
-                    if self.loss_mode == 'cml1':
+                    if self.loss_mode == 'cml1'or  self.loss_mode == 'cml1+style':
                             mask = get_l2_mask(torch.unsqueeze(torch.tensor(np.transpose(img.astype('float32'), (2, 0, 1))), 0) / 255).cpu()[:,0,:,:]
                             mask = mask.numpy() * 255
                             mask = mask.astype(np.uint8)
@@ -57,7 +55,7 @@ class Paint:
                 else:
                     test_num += 1
                     img_test.append(img)
-                    if self.loss_mode == 'cml1':
+                    if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
                             mask = get_l2_mask(torch.unsqueeze(torch.tensor(np.transpose(img.astype('float32'), (2, 0, 1))), 0) / 255).cpu()[:,0,:,:]
                             mask = mask.numpy() * 255
                             mask = mask.astype(np.uint8)
@@ -79,7 +77,7 @@ class Paint:
                 if i > 2000:
                     train_num += 1
                     img_train.append(img)
-                    if self.loss_mode == 'cml1':
+                    if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
                             mask = get_l2_mask(torch.unsqueeze(torch.tensor(np.transpose(img.astype('float32'), (2, 0, 1))), 0) / 255).cpu()[:,0,:,:]
                             mask = mask.numpy() * 255
                             mask = mask.astype(np.uint8)
@@ -88,7 +86,7 @@ class Paint:
                 else:
                     test_num += 1
                     img_test.append(img)
-                    if self.loss_mode == 'cml1':
+                    if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
                             mask = get_l2_mask(torch.unsqueeze(torch.tensor(np.transpose(img.astype('float32'), (2, 0, 1))), 0) / 255).cpu()[:,0,:,:]
                             mask = mask.numpy() * 255
                             mask = mask.astype(np.uint8)
@@ -124,7 +122,7 @@ class Paint:
         self.mask = None
         self.imgid = [0] * self.batch_size
         self.gt = torch.zeros([self.batch_size, 3, width, width], dtype=torch.uint8).to(device)
-        if self.loss_mode == 'cml1':
+        if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
             self.mask = torch.zeros([self.batch_size, 1, width, width], dtype=torch.uint8).to(device)
         for i in range(self.batch_size):
             if test:
@@ -133,12 +131,11 @@ class Paint:
                 id = np.random.randint(train_num)
             self.imgid[i] = id
             self.gt[i] = torch.tensor(self.pre_data(id, test))
-            if self.loss_mode == 'cml1':
+            if self.loss_mode == 'cml1'or self.loss_mode == 'cml1+style':
                 self.mask[i] = self.get_mask(id, test)
         self.tot_reward = ((self.gt.float() / 255) ** 2).mean(1).mean(1).mean(1)
         self.stepnum = 0
         self.canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.uint8).to(device)
-        self.prev_canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.float32).to(device)
         self.lastdis = self.ini_dis = self.cal_dis()
         return self.observation()
 
@@ -148,7 +145,7 @@ class Paint:
         # T B * 1 * width * width
         ob = []
         T = torch.ones([self.batch_size, 1, width, width], dtype=torch.uint8) * self.stepnum
-        if self.loss_mode == 'cml1':
+        if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
             return torch.cat((self.canvas, self.gt, self.mask, T.to(device)), 1), self.mask # canvas, img, mask, T
 
         return torch.cat((self.canvas, self.gt, T.to(device)), 1), None # canvas, img, T
@@ -161,9 +158,7 @@ class Paint:
         self.stepnum += 1
         ob, mask = self.observation()
         done = (self.stepnum == self.max_step)
-        #reward = self.cal_reward() # np.array([0.] * self.batch_size)
-        reward = cal_perceptual_style_reward(self.prev_canvas.float(), self.canvas.float(), self.gt.float())
-        self.prev_canvas = self.canvas
+        reward = self.cal_reward() # np.array([0.] * self.batch_size)
         return ob.detach(), reward, np.array([done] * self.batch_size), None, mask
 
     def cal_dis(self):
