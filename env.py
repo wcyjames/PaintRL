@@ -5,7 +5,7 @@ import numpy as np
 import argparse
 import torchvision.transforms as transforms
 import cv2
-from DRL.ddpg import decode
+from DRL.ddpg import *
 from utils.util import *
 from PIL import Image
 from DRL.content_loss import *
@@ -26,7 +26,7 @@ train_num = 0
 test_num = 0
 
 class Paint:
-    def __init__(self, batch_size, max_step, loss_mode, canvas_color = None):
+    def __init__(self, batch_size, max_step, loss_mode, canvas_color = None, style_type = None):
         self.batch_size = batch_size
         self.max_step = max_step
         self.action_space = (13)
@@ -36,6 +36,7 @@ class Paint:
         self.mask_train = []
         self.mask_test = []
         self.canvas_color = canvas_color
+        self.style_type = style_type
 
     def load_monet_data(self):
         global train_num, test_num
@@ -98,6 +99,12 @@ class Paint:
                     print('loaded {} images'.format(i + 1))
         print('finish loading data, {} training images, {} testing images'.format(str(train_num), str(test_num)))
 
+    def pre_style_img(self, style_img):
+        img = aug(style_img)
+        img = np.asarray(img)
+        img = img.astype(np.uint8)
+        return img
+
     def pre_data(self, id, test):
         if test:
             img = img_test[id]
@@ -125,6 +132,11 @@ class Paint:
         self.gt = torch.zeros([self.batch_size, 3, width, width], dtype=torch.uint8).to(device)
         if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
             self.mask = torch.zeros([self.batch_size, 1, width, width], dtype=torch.uint8).to(device)
+            if self.style_type == 'img':
+              self.style_img_ref = torch.tensor(self.pre_style_img(style_img_)).to(device)
+              self.style_img_ref = self.style_img_ref[None, :]
+              self.style_img_ref = self.style_img_ref.repeat(self.batch_size, 1, 1, 1)
+              self.style_img_ref = self.style_img_ref.permute(0,3,1,2)
         for i in range(self.batch_size):
             if test:
                 id = (i + begin_num)  % test_num
@@ -155,7 +167,10 @@ class Paint:
         ob = []
         T = torch.ones([self.batch_size, 1, width, width], dtype=torch.uint8) * self.stepnum
         if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
-            return torch.cat((self.canvas, self.gt, self.mask, T.to(device)), 1), self.mask # canvas, img, mask, T
+            if self.style_type == 'img':
+              return torch.cat((self.canvas, self.gt, self.style_img_ref, self.mask, T.to(device)), 1), self.mask
+            else:
+              return torch.cat((self.canvas, self.gt, self.mask, T.to(device)), 1), self.mask # canvas, img, mask, T
 
         return torch.cat((self.canvas, self.gt, T.to(device)), 1), None # canvas, img, T
 

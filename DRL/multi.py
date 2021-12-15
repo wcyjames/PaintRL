@@ -9,10 +9,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class fastenv():
     def __init__(self,
                  max_episode_length=10, env_batch=64, \
-                 writer=None, loss_mode = None, dataset = 'celeb', canvas_color = None):
+                 writer=None, loss_mode = None, dataset = 'celeb', canvas_color = None, style_type = 'dataset'):
         self.max_episode_length = max_episode_length
         self.env_batch = env_batch
-        self.env = Paint(self.env_batch, self.max_episode_length, loss_mode, canvas_color)
+        self.env = Paint(self.env_batch, self.max_episode_length, loss_mode, canvas_color, style_type)
         if dataset == 'monet':
           self.env.load_monet_data()
         else:

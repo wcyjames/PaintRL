@@ -112,7 +112,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     from DRL.ddpg import DDPG
     from DRL.multi import fastenv
-    fenv = fastenv(args.max_step, args.env_batch, writer, args.loss_mode, args.dataset, args.canvas_color)
+    fenv = fastenv(args.max_step, args.env_batch, writer, args.loss_mode, args.dataset, args.canvas_color, args.style_type)
     agent = DDPG(args.batch_size, args.env_batch, args.max_step, \
                  args.tau, args.discount, args.rmsize, \
                  writer, args.resume, args.output, args.loss_mode, args.style_type)

@@ -23,12 +23,22 @@ parser.add_argument('--imgid', default=0, type=int, help='set begin number for g
 parser.add_argument('--divide', default=4, type=int, help='divide the target image to get better resolution')
 parser.add_argument('--loss_mode', default='cml1', type=str, help='loss mode')
 parser.add_argument('--canvas_color', default=None, type=str, help='canvas color')
+parser.add_argument('--style_type', default='img', type=str, help='img | dataset')
+parser.add_argument('--style_img', default=None, type=str, help='image path')
 args = parser.parse_args()
 
 canvas_cnt = args.divide * args.divide
 T = torch.ones([1, 1, width, width], dtype=torch.float32).to(device)
 img = cv2.imread(args.img, cv2.IMREAD_COLOR)
 origin_shape = (img.shape[1], img.shape[0])
+
+style_img = cv2.imread(style_img, cv2.IMREAD_UNCHANGED)
+width = 128
+style_img = cv2.resize(style_img, (width, width))
+style_img = torch.tensor(style_img).float().to(device)
+style_img = style_img[None,:]
+style_img = style_img.permute(0,3,1,2)
+
 
 coord = torch.zeros([1, 2, width, width])
 for i in range(width):
@@ -103,7 +113,10 @@ def save_img(res, imgid, divide=False):
     cv2.imwrite('output/generated' + str(imgid) + '.png', output)
 
 if args.loss_mode == 'cml1' or args.loss_mode == 'cml1+style':
-  actor = ResNet(10, 18, 65) # action_bundle = 5, 65 = 5 * 13
+  if args.style_type == 'img':
+    actor = ResNet(13, 18, 65)
+  else:
+    actor = ResNet(10, 18, 65) # action_bundle = 5, 65 = 5 * 13
 else:
   actor = ResNet(9, 18, 65)
 actor.load_state_dict(torch.load(args.actor))
@@ -136,7 +149,11 @@ with torch.no_grad():
     for i in range(args.max_step):
         stepnum = T * i / args.max_step
         if args.loss_mode == 'cml1' or args.loss_mode == 'cml1+style':
-          actions = actor(torch.cat([canvas, img, img_mask, stepnum, coord], 1))
+          if args.style_type == 'img':
+            style_img_ref = style_img.repeat(canvas.shape[0], 1, 1, 1)
+            actions = actor(torch.cat([canvas, img, style_img_ref, img_mask, stepnum, coord], 1))
+          else:
+            actions = actor(torch.cat([canvas, img, img_mask, stepnum, coord], 1))
         else:
           actions = actor(torch.cat([canvas, img, stepnum, coord], 1))
         canvas, res = decode(actions, canvas)
@@ -158,7 +175,10 @@ with torch.no_grad():
         for i in range(args.max_step):
             stepnum = T * i / args.max_step
             if args.loss_mode == 'cml1' or args.loss_mode == 'cml1+style':
-              actions = actor(torch.cat([canvas, patch_img, img_mask, stepnum, coord], 1))
+              if args.style_type == 'img':
+                actions = actor(torch.cat([canvas, patch_img, style_img_ref, img_mask, stepnum, coord], 1))
+              else:
+                actions = actor(torch.cat([canvas, patch_img, img_mask, stepnum, coord], 1))
             else:
               actions = actor(torch.cat([canvas, patch_img, stepnum, coord], 1))
             canvas, res = decode(actions, canvas)

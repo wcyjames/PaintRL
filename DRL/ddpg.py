@@ -80,8 +80,8 @@ def cal_perceptual_style_reward(canvas0, canvas1, target):
     return reward
 
 def cml1_style_reward_style_images(canvas0, canvas1, gt):
-    style_targets = [GramMatrix()(A).detach() for A in vgg(target, style_layers)]
-    content_targets = [A.detach() for A in vgg(target, content_layers)]
+    style_targets = [GramMatrix()(A).detach() for A in vgg(gt, style_layers)]
+    content_targets = [A.detach() for A in vgg(gt, content_layers)]
     targets = style_targets + content_targets
     out_canvas_0 = vgg(canvas0, loss_layers)
     out_canvas_1 = vgg(canvas1, loss_layers)
@@ -91,7 +91,7 @@ def cml1_style_reward_style_images(canvas0, canvas1, gt):
       style_reward += layer_reward[i]
     style_reward /= style_scale
     content_reward = layer_reward[-1]
-    content_reward, mask = content_mask_l1_reward(canvas0, canvas1, target)
+    content_reward, mask = content_mask_l1_reward(canvas0, canvas1, gt)
     content_reward /= content_scale
     reward = style_weight * style_reward + content_weight * content_reward
 
@@ -149,10 +149,10 @@ content_weights = [1e0]
 weights = style_weights + content_weights
 
 # one style image
-style_img = cv2.imread('./image/mosaic.jpg', cv2.IMREAD_UNCHANGED)
+style_img_ = cv2.imread('./image/mosaic.jpg', cv2.IMREAD_UNCHANGED)
 width = 128
-style_img = cv2.resize(style_img, (width, width))
-style_img = torch.tensor(style_img).float().to(device)
+style_img_ = cv2.resize(style_img_, (width, width))
+style_img = torch.tensor(style_img_).float().to(device)
 style_img = style_img[None,:]
 style_img = style_img.permute(0,3,1,2)
 print(style_img.shape)
@@ -209,7 +209,13 @@ class DDPG(object):
 
     def play(self, state, target=False):
         if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
-            state = torch.cat((state[:, :6].float() / 255,  #canvas and target \
+            if self.style_type == 'img':
+              state = torch.cat((state[:, :9].float() / 255,  #canvas and target \
+                               state[:, 9:10].float() / 255, # mask \
+                               state[:, 9+1:10+1].float() / self.max_step, # step num \
+                               coord.expand(state.shape[0], 2, 128, 128)), 1)
+            else:
+              state = torch.cat((state[:, :6].float() / 255,  #canvas and target \
                                state[:, 6:7].float() / 255, # mask \
                                state[:, 6+1:7+1].float() / self.max_step, # step num \
                                coord.expand(state.shape[0], 2, 128, 128)), 1)
@@ -254,9 +260,9 @@ class DDPG(object):
                 reward, mask = cml1_style_reward(canvas0, canvas1, gt)
         coord_ = coord.expand(state.shape[0], 2, 128, 128)
         if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
-            if style_type == 'img':
-                merged_state = torch.cat([canvas0, canvas1, gt, style_img, mask, (T + 1).float() / self.max_step, coord_], 1)
-                print(merged_state.shape)
+            if self.style_type == 'img':
+                style_img_ref = style_img.repeat(canvas0.shape[0], 1, 1, 1)
+                merged_state = torch.cat([canvas0, canvas1, gt, style_img_ref, mask, (T + 1).float() / self.max_step, coord_], 1)
             else:
                 merged_state = torch.cat([canvas0, canvas1, gt, mask, (T + 1).float() / self.max_step, coord_], 1)
         else:
