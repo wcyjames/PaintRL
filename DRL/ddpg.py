@@ -79,7 +79,7 @@ def cal_perceptual_style_reward(canvas0, canvas1, target):
     #perceptual_reward = ((out_canvas_0[0] - content_targets[0]) ** 2).mean(1).mean(1).mean(1) - ((out_canvas_1[0] - content_targets[0]) ** 2).mean(1).mean(1).mean(1)
     return reward
 
-def cml1_style_reward_style_images(canvas0, canvas1, gt):
+def cml1_style_reward_style_dataset(canvas0, canvas1, gt):
     style_targets = [GramMatrix()(A).detach() for A in vgg(gt, style_layers)]
     content_targets = [A.detach() for A in vgg(gt, content_layers)]
     targets = style_targets + content_targets
@@ -89,15 +89,23 @@ def cml1_style_reward_style_images(canvas0, canvas1, gt):
     style_reward = layer_reward[0]
     for i in range(1, len(style_layers)):
       style_reward += layer_reward[i]
+    if style_initial == None:
+      style_initial = style_reward
+    style_reward /= style_initial
     style_reward /= style_scale
-    content_reward = layer_reward[-1]
     content_reward, mask = content_mask_l1_reward(canvas0, canvas1, gt)
+    if content_initial == None:
+      content_initial = content_reward
+    content_reward /= content_initial
     content_reward /= content_scale
+    print('content reward')
+    print(content_reward)
+    print(style_reward)
     reward = style_weight * style_reward + content_weight * content_reward
 
     return reward, mask
 
-def cml1_style_reward(canvas0, canvas1, gt):
+def cml1_style_reward_style_img(canvas0, canvas1, gt):
     targets = style_targets_img
     out_canvas_0 = vgg(canvas0, style_layers)
     out_canvas_1 = vgg(canvas1, style_layers)
@@ -149,7 +157,9 @@ content_weights = [1e0]
 weights = style_weights + content_weights
 
 # one style image
-style_img_ = cv2.imread('./image/mosaic.jpg', cv2.IMREAD_UNCHANGED)
+content_initial = None
+style_initial = None
+style_img_ = cv2.imread('./van_gogh.jpg', cv2.IMREAD_UNCHANGED)
 width = 128
 style_img_ = cv2.resize(style_img_, (width, width))
 style_img = torch.tensor(style_img_).float().to(device)
@@ -255,9 +265,9 @@ class DDPG(object):
           reward = cal_perceptual_style_reward(canvas0, canvas1, gt)
         elif self.loss_mode == 'cml1+style':
             if self.style_type == 'img':
-                reward, mask = cml1_style_reward_style_images(canvas0, canvas1, gt)
+                reward, mask = cml1_style_reward_style_img(canvas0, canvas1, gt)
             else:
-                reward, mask = cml1_style_reward(canvas0, canvas1, gt)
+                reward, mask = cml1_style_reward_style_dataset(canvas0, canvas1, gt)
         coord_ = coord.expand(state.shape[0], 2, 128, 128)
         if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
             if self.style_type == 'img':
