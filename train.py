@@ -27,7 +27,7 @@ def train(agent, env, evaluate):
     tot_reward = 0.
     observation = None
     noise_factor = args.noise_factor
-    
+
     while step <= train_times:
         step += 1
         episode_steps += 1
@@ -99,6 +99,8 @@ if __name__ == "__main__":
     parser.add_argument('--loss_mode', default='style', type=str, help='loss mode')
     parser.add_argument('--dataset', default='celeb', type=str, help='dataset [monet/celeb]')
     parser.add_argument('--canvas_color', default='black', type=str, help='canvas color')
+    parser.add_argument('--style_type', default='img', type=str, help='img or dataset')
+
 
     args = parser.parse_args()
     args.output = get_output_folder(args.output, "Paint")
@@ -113,7 +115,7 @@ if __name__ == "__main__":
     fenv = fastenv(args.max_step, args.env_batch, writer, args.loss_mode, args.dataset, args.canvas_color)
     agent = DDPG(args.batch_size, args.env_batch, args.max_step, \
                  args.tau, args.discount, args.rmsize, \
-                 writer, args.resume, args.output, args.loss_mode)
+                 writer, args.resume, args.output, args.loss_mode, args.style_type)
     evaluate = Evaluator(args, writer)
     print('observation_space', fenv.observation_space, 'action_space', fenv.action_space)
     train(agent, fenv, evaluate)
