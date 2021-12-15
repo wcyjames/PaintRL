@@ -170,8 +170,12 @@ class DDPG(object):
         self.state_size = 9
         self.add = 3
         if loss_mode == 'cml1' or loss_mode == 'cml1+style':
-            self.state_size = 10
-            self.add = 5
+            if style_type == 'img':
+                self.state_size = 13
+                self.add = 5
+            else:
+                self.state_size = 10
+                self.add = 5
         self.actor = ResNet(self.state_size, 18, 65) # target, canvas, stepnum, coordconv 3 + 3 + 1 + 2
         self.actor_target = ResNet(self.state_size, 18, 65)
         self.critic = ResNet_wobn(self.add + self.state_size, 18, 1) # add the last canvas for better prediction
@@ -250,7 +254,11 @@ class DDPG(object):
                 reward, mask = cml1_style_reward(canvas0, canvas1, gt)
         coord_ = coord.expand(state.shape[0], 2, 128, 128)
         if self.loss_mode == 'cml1' or self.loss_mode == 'cml1+style':
-          merged_state = torch.cat([canvas0, canvas1, gt, mask, (T + 1).float() / self.max_step, coord_], 1)
+            if style_type == 'img':
+                merged_state = torch.cat([canvas0, canvas1, gt, style_img, mask, (T + 1).float() / self.max_step, coord_], 1)
+                print(merged_state.shape)
+            else:
+                merged_state = torch.cat([canvas0, canvas1, gt, mask, (T + 1).float() / self.max_step, coord_], 1)
         else:
           merged_state = torch.cat([canvas0, canvas1, gt, (T + 1).float() / self.max_step, coord_], 1)
 
