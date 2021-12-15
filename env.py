@@ -26,7 +26,7 @@ train_num = 0
 test_num = 0
 
 class Paint:
-    def __init__(self, batch_size, max_step, loss_mode):
+    def __init__(self, batch_size, max_step, loss_mode, canvas_color = None):
         self.batch_size = batch_size
         self.max_step = max_step
         self.action_space = (13)
@@ -35,6 +35,7 @@ class Paint:
         self.loss_mode = loss_mode
         self.mask_train = []
         self.mask_test = []
+        self.canvas_color = canvas_color
 
     def load_monet_data(self):
         global train_num, test_num
@@ -135,7 +136,15 @@ class Paint:
                 self.mask[i] = self.get_mask(id, test)
         self.tot_reward = ((self.gt.float() / 255) ** 2).mean(1).mean(1).mean(1)
         self.stepnum = 0
-        self.canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.uint8).to(device)
+
+        if self.canvas_color == 'white':
+            self.canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.uint8).to(device) + 255
+        elif self.canvas_color == 'none':
+            # init with -1
+            self.canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.uint8).to(device) - 255
+        else:
+            # Black canvas
+            self.canvas = torch.zeros([self.batch_size, 3, width, width], dtype=torch.uint8).to(device)
         self.lastdis = self.ini_dis = self.cal_dis()
         return self.observation()
 

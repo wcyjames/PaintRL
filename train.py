@@ -27,6 +27,7 @@ def train(agent, env, evaluate):
     tot_reward = 0.
     observation = None
     noise_factor = args.noise_factor
+    
     while step <= train_times:
         step += 1
         episode_steps += 1
@@ -41,6 +42,7 @@ def train(agent, env, evaluate):
             if step > args.warmup:
                 # [optional] evaluate
                 if episode > 0 and validate_interval > 0 and episode % validate_interval == 0:
+                    print("****evaluate*******")
                     reward, dist = evaluate(env, agent.select_action, debug=debug)
                     if debug: prRed('Step_{:07d}: mean_reward:{:.3f} mean_dist:{:.3f} var_dist:{:.3f}'.format(step - 1, np.mean(reward), np.mean(dist), np.var(dist)))
                     writer.add_scalar('validate/mean_reward', np.mean(reward), step)
@@ -96,6 +98,7 @@ if __name__ == "__main__":
     parser.add_argument('--seed', default=1234, type=int, help='random seed')
     parser.add_argument('--loss_mode', default='style', type=str, help='loss mode')
     parser.add_argument('--dataset', default='celeb', type=str, help='dataset [monet/celeb]')
+    parser.add_argument('--canvas_color', default='black', type=str, help='canvas color')
 
     args = parser.parse_args()
     args.output = get_output_folder(args.output, "Paint")
@@ -107,7 +110,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     from DRL.ddpg import DDPG
     from DRL.multi import fastenv
-    fenv = fastenv(args.max_step, args.env_batch, writer, args.loss_mode, args.dataset)
+    fenv = fastenv(args.max_step, args.env_batch, writer, args.loss_mode, args.dataset, args.canvas_color)
     agent = DDPG(args.batch_size, args.env_batch, args.max_step, \
                  args.tau, args.discount, args.rmsize, \
                  writer, args.resume, args.output, args.loss_mode)
