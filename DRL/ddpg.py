@@ -85,22 +85,16 @@ def cml1_style_reward_style_dataset(canvas0, canvas1, gt):
     targets = style_targets + content_targets
     out_canvas_0 = vgg(canvas0, loss_layers)
     out_canvas_1 = vgg(canvas1, loss_layers)
-    layer_reward = [loss_fns[i](out_canvas_0[i],out_canvas_1[i], targets[i]) for i in range(len(loss_layers))]
+    layer_reward = [weights[i] * loss_fns[i](out_canvas_0[i],out_canvas_1[i], targets[i]) for i in range(len(loss_layers))]
     style_reward = layer_reward[0]
     for i in range(1, len(style_layers)):
       style_reward += layer_reward[i]
-    if style_initial == None:
-      style_initial = style_reward
-    style_reward /= style_initial
     style_reward /= style_scale
     content_reward, mask = content_mask_l1_reward(canvas0, canvas1, gt)
-    if content_initial == None:
-      content_initial = content_reward
-    content_reward /= content_initial
     content_reward /= content_scale
-    print('content reward')
-    print(content_reward)
-    print(style_reward)
+    # print('content reward')
+    # print(content_reward)
+    # print(style_reward)
     reward = style_weight * style_reward + content_weight * content_reward
 
     return reward, mask
@@ -145,28 +139,29 @@ def content_mask_l1_reward(canvas0, canvas1, gt):
 
 #content + style
 content_layers = ['r43']
-style_layers = ['r11','r21','r31','r41', 'r51']
+style_layers = ['r12','r22','r33','r43', 'r53']
 style_weight = 0.5
 content_weight = 1e0
 style_scale = 1e10
 content_scale = 1e2
 loss_layers = style_layers + content_layers
 loss_fns =[cal_style_loss] * len(style_layers) + [cal_content_loss] * len(content_layers)
-style_weights = [1e3/n**2 for n in [64,128,256,512,512]]
+#style_weights = [1e3/n**2 for n in [64,128,256,512,512]]
+style_weights = [6, 2, 1, 0.8, 0.2]
 content_weights = [1e0]
 weights = style_weights + content_weights
 
-# one style image
-content_initial = None
-style_initial = None
-style_img_ = cv2.imread('./van_gogh.jpg', cv2.IMREAD_UNCHANGED)
-width = 128
-style_img_ = cv2.resize(style_img_, (width, width))
-style_img = torch.tensor(style_img_).float().to(device)
-style_img = style_img[None,:]
-style_img = style_img.permute(0,3,1,2)
-print(style_img.shape)
-style_targets_img = [GramMatrix()(A).detach() for A in vgg(style_img, style_layers)]
+# # one style image
+# content_initial = None
+# style_initial = None
+# style_img_ = cv2.imread('./van_gogh.jpg', cv2.IMREAD_UNCHANGED)
+# width = 128
+# style_img_ = cv2.resize(style_img_, (width, width))
+# style_img = torch.tensor(style_img_).float().to(device)
+# style_img = style_img[None,:]
+# style_img = style_img.permute(0,3,1,2)
+# print(style_img.shape)
+# style_targets_img = [GramMatrix()(A).detach() for A in vgg(style_img, style_layers)]
 
 
 class DDPG(object):
