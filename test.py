@@ -32,12 +32,13 @@ T = torch.ones([1, 1, width, width], dtype=torch.float32).to(device)
 img = cv2.imread(args.img, cv2.IMREAD_COLOR)
 origin_shape = (img.shape[1], img.shape[0])
 
-style_img = cv2.imread(args.style_img, cv2.IMREAD_UNCHANGED)
-width = 128
-style_img = cv2.resize(style_img, (width, width))
-style_img = torch.tensor(style_img).float().to(device)
-style_img = style_img[None,:]
-style_img = style_img.permute(0,3,1,2)
+if args.style_img != None:
+  style_img = cv2.imread(args.style_img, cv2.IMREAD_UNCHANGED)
+  width = 128
+  style_img = cv2.resize(style_img, (width, width))
+  style_img = torch.tensor(style_img).float().to(device)
+  style_img = style_img[None,:]
+  style_img = style_img.permute(0,3,1,2)
 
 
 coord = torch.zeros([1, 2, width, width])
