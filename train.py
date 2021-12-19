@@ -9,8 +9,8 @@ from utils.tensorboard import TensorBoard
 import time
 
 exp = os.path.abspath('.').split('/')[-1]
-writer = TensorBoard('./train_log/{}'.format(exp))
-os.system('ln -sf ./train_log/{} ./log'.format(exp))
+writer = TensorBoard('../train_log/{}'.format(exp))
+os.system('ln -sf ../train_log/{} ./log'.format(exp))
 os.system('mkdir ./model')
 
 def train(agent, env, evaluate):
@@ -27,20 +27,22 @@ def train(agent, env, evaluate):
     tot_reward = 0.
     observation = None
     noise_factor = args.noise_factor
+
     while step <= train_times:
         step += 1
         episode_steps += 1
         # reset if it is the start of episode
         if observation is None:
-            observation = env.reset()
-            agent.reset(observation, noise_factor)    
+            observation = env.reset()[0]
+            agent.reset(observation, noise_factor)
         action = agent.select_action(observation, noise_factor=noise_factor)
-        observation, reward, done, _ = env.step(action)
-        agent.observe(reward, observation, done, step)
+        observation, reward, done, _, mask = env.step(action)
+        agent.observe(reward, observation, done, step, mask)
         if (episode_steps >= max_step and max_step):
             if step > args.warmup:
                 # [optional] evaluate
                 if episode > 0 and validate_interval > 0 and episode % validate_interval == 0:
+                    print("****evaluate*******")
                     reward, dist = evaluate(env, agent.select_action, debug=debug)
                     if debug: prRed('Step_{:07d}: mean_reward:{:.3f} mean_dist:{:.3f} var_dist:{:.3f}'.format(step - 1, np.mean(reward), np.mean(dist), np.var(dist)))
                     writer.add_scalar('validate/mean_reward', np.mean(reward), step)
@@ -67,13 +69,13 @@ def train(agent, env, evaluate):
                 writer.add_scalar('train/Q', tot_Q / episode_train_times, step)
                 writer.add_scalar('train/critic_loss', tot_value_loss / episode_train_times, step)
             if debug: prBlack('#{}: steps:{} interval_time:{:.2f} train_time:{:.2f}' \
-                .format(episode, step, train_time_interval, time.time()-time_stamp)) 
+                .format(episode, step, train_time_interval, time.time()-time_stamp))
             time_stamp = time.time()
             # reset
             observation = None
             episode_steps = 0
             episode += 1
-    
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Learning to Paint')
 
@@ -89,15 +91,18 @@ if __name__ == "__main__":
     parser.add_argument('--validate_interval', default=50, type=int, help='how many episodes to perform a validation')
     parser.add_argument('--validate_episodes', default=5, type=int, help='how many episode to perform during validation')
     parser.add_argument('--train_times', default=2000000, type=int, help='total traintimes')
-    parser.add_argument('--episode_train_times', default=10, type=int, help='train times for each episode')    
+    parser.add_argument('--episode_train_times', default=10, type=int, help='train times for each episode')
     parser.add_argument('--resume', default=None, type=str, help='Resuming model path for testing')
     parser.add_argument('--output', default='./model', type=str, help='Resuming model path for testing')
     parser.add_argument('--debug', dest='debug', action='store_true', help='print some info')
     parser.add_argument('--seed', default=1234, type=int, help='random seed')
+    parser.add_argument('--loss_mode', default='style', type=str, help='loss mode')
+    parser.add_argument('--dataset', default='celeb', type=str, help='dataset [monet/celeb]')
+    parser.add_argument('--canvas_color', default='black', type=str, help='canvas color')
+    parser.add_argument('--style_type', default='img', type=str, help='img or dataset')
 
-    parser.add_argument('--canvas_color', default=None, type=str, help='canvas color')
-    
-    args = parser.parse_args()    
+
+    args = parser.parse_args()
     args.output = get_output_folder(args.output, "Paint")
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -107,10 +112,10 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     from DRL.ddpg import DDPG
     from DRL.multi import fastenv
-    fenv = fastenv(args.max_step, args.env_batch, writer, args.canvas_color)
+    fenv = fastenv(args.max_step, args.env_batch, writer, args.loss_mode, args.dataset, args.canvas_color, args.style_type)
     agent = DDPG(args.batch_size, args.env_batch, args.max_step, \
                  args.tau, args.discount, args.rmsize, \
-                 writer, args.resume, args.output)
+                 writer, args.resume, args.output, args.loss_mode, args.style_type)
     evaluate = Evaluator(args, writer)
     print('observation_space', fenv.observation_space, 'action_space', fenv.action_space)
     train(agent, fenv, evaluate)
